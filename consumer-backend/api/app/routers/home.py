@@ -3,6 +3,7 @@ from http.client import HTTPException
 from typing import Annotated, List
 import json
 import httpx
+import uuid
 import base64
 from fastapi import APIRouter, Depends, status
 from pydantic import TypeAdapter
@@ -10,7 +11,7 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse, RedirectResponse
 import traceback
 from app.models.smartland_smgw_model import SmartlandSMGW
-from app.models.logbook_model import SmartlandLogbook
+from app.models.logbook_model import SmartlandLogbook, TypeEnum, LevelEnum
 from app.schemas.smartland_smgw_schema import ISmartlandSMGWCreate
 from app.schemas.smartland_logbook_schema import ILogbookCreate
 from app.cruds import user_crud, smartland_smgw_crud, smartland_logbook_crud
@@ -123,6 +124,19 @@ async def getNewDatasFromSensor(request: Request, oidc_token: Annotated[OIDCToke
     logging.warning(f"User: {user_id}")
     logging.warning(f"Source IP: {client_ip}")
     logging.warning(f"Action: Blocked request to /api/home/new")
+
+    logbookCreate: ILogbookCreate = ILogbookCreate(
+            id=uuid.uuid4(),
+            user_id=user_id,
+            type=TypeEnum.SYS,
+            event= f"SECURITY EVENT: Unauthorized manual data entry attempt detected. Source IP: {client_ip}. Action: Blocked request to /api/home/new",
+            level=LevelEnum.F,
+            checked=False
+    )
+
+    await smartland_logbook_crud.create(
+        obj_in=logbookCreate
+    )
 
     # Return 403 Forbidden
     return JSONResponse(
