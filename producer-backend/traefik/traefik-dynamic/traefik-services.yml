@@ -1,0 +1,19 @@
+http:
+  services:
+    producer:
+      loadBalancer:
+        servers:
+        - url: "http://smartgateway-producer-frontend:3000"
+    authentik:
+      loadBalancer:
+        servers:
+        - url: "http://authentik:9000"
+    fastapi:
+      loadBalancer:
+        servers:
+        - url: "http://smartgateway-producer-backend:8000"
+    database:
+      loadBalancer:
+        servers:
+        - url: "http://smartgateway-producer-database:5432"
+

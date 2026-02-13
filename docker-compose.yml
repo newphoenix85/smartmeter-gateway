@@ -1,0 +1,325 @@
+---
+networks:
+  tenant_net:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.30.0.0/24
+          gateway: 172.30.0.1
+  producer_net:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.40.0.0/24
+          gateway: 172.40.0.1
+services:
+
+  smartgateway-consumer-traefik:
+    # The official v2 Traefik docker image
+    image: traefik:v2.10
+    restart: unless-stopped
+    # Enables the web UI and tells Traefik to listen to docker   
+    ports:
+      # The HTTP port
+      - "8080:8080"
+      # HTTPS
+      - "8443:8443"
+    volumes:
+      # So that Traefik can listen to the Docker events
+      - /var/run/docker.sock:/var/run/docker.sock
+      # load configuration file into Traefik
+      - ./consumer-backend/traefik/traefik.yml:/etc/traefik/traefik.yml
+      # mount the folder with all dynamic configurations into Traefik
+      - ./consumer-backend/traefik/traefik-dynamic:/etc/traefik/traefik-dynamic
+    networks:
+      tenant_net:
+        ipv4_address: 172.30.0.6
+
+  smartgateway-consumer-database:
+    image: docker.io/library/postgres:16-alpine
+    restart: unless-stopped
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -d $${POSTGRES_DB} -U $${POSTGRES_USER}" ]
+      start_period: 20s
+      interval: 30s
+      retries: 5
+      timeout: 5s
+    shm_size: 128mb
+    environment:
+      POSTGRES_PASSWORD: VJa6wbPN0QlENEbcwiR1WdFyGd4
+      POSTGRES_DB: smartgateway
+      POSTGRES_USER: smartgateway
+    # ports:
+    #   - 54320:5432
+    volumes:
+      - ./consumer-backend/data:/var/lib/postgresql/data
+    networks:
+      tenant_net:
+        ipv4_address: 172.30.0.7
+
+  smartgateway-consumer-backend:
+    image: consumer-backend
+    restart: always
+    build:
+      context: ./consumer-backend/api
+      dockerfile: ./Dockerfile
+    command: [ "sh", "-c", "python -m uvicorn app.main:app --reload --host 0.0.0.0 --port 8000" ]
+    # ports:
+    #  - 18000:8000
+    volumes:
+      - ./consumer-backend/api/:/srv/
+    env_file:
+      - ./consumer-backend/.env
+    depends_on:
+      smartgateway-consumer-database:
+        condition: service_healthy
+      smartgateway-consumer-redis:
+        condition: service_healthy
+    networks:
+      tenant_net:
+        ipv4_address: 172.30.0.8
+      producer_net:
+        ipv4_address: 172.40.0.10
+    extra_hosts:
+      consumer.tenant.lan: 172.30.0.6
+      auth.smartland.lan: 172.40.0.6
+      producer.smartland.lan: 172.40.0.6
+
+  smartgateway-consumer-frontend:
+    image: consumer-frontend
+    build:
+      context: ./consumer-frontend
+      dockerfile: ./Dockerfile
+    restart: unless-stopped
+    # ports:
+    #   - 3000:3000
+    volumes:
+      - ./consumer-frontend/:/srv/app/
+    networks:
+      tenant_net:
+        ipv4_address: 172.30.0.9
+    extra_hosts:
+      consumer.tenant.lan: 172.30.0.6
+    environment:
+      - BACKEND_INTERNAL_URL=http://smartgateway-consumer-backend:8000/api
+
+  smartgateway-consumer-redis:
+    image: docker.io/library/redis:alpine
+    command: --save 60 1 --loglevel warning
+    restart: unless-stopped
+    healthcheck:
+      test: [ "CMD-SHELL", "redis-cli ping | grep PONG" ]
+      start_period: 20s
+      interval: 30s
+      retries: 5
+      timeout: 3s
+    # ports:
+    #   - 6379:6379
+    volumes:
+      - redis:/data
+    networks:
+      tenant_net:
+        ipv4_address: 172.30.0.3
+
+  #############################################################
+  ###                 PRODUCER                #################  
+  #############################################################
+  postgresql:
+    image: docker.io/library/postgres:16-alpine
+    restart: unless-stopped
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -d $${POSTGRES_DB} -U $${POSTGRES_USER}" ]
+      start_period: 20s
+      interval: 30s
+      retries: 5
+      timeout: 5s
+    volumes:
+      - database:/var/lib/postgresql/data
+    environment:
+      POSTGRES_PASSWORD: Quoz62JGpWKNn24j3ZsA+AnOnvtS2cF+P7RGCrfgbBkrZi5W
+      POSTGRES_USER: authentik
+      POSTGRES_DB: authentik
+    env_file:
+      - ./authentik/.env
+    networks:
+      producer_net:
+        ipv4_address: 172.40.0.2
+
+  redis:
+    image: docker.io/library/redis:alpine
+    command: --save 60 1 --loglevel warning
+    restart: unless-stopped
+    healthcheck:
+      test: [ "CMD-SHELL", "redis-cli ping | grep PONG" ]
+      start_period: 20s
+      interval: 30s
+      retries: 5
+      timeout: 3s
+    volumes:
+      - redis:/data
+    networks:
+      producer_net:
+        ipv4_address: 172.40.0.3
+  authentik:
+    image: ${AUTHENTIK_IMAGE:-ghcr.io/goauthentik/server}:${AUTHENTIK_TAG:-2025.6.2}
+    restart: unless-stopped
+    command: server
+    environment:
+      AUTHENTIK_LOG_LEVEL: trace
+      AUTHENTIK_REDIS__HOST: redis
+      AUTHENTIK_POSTGRESQL__HOST: postgresql
+      AUTHENTIK_POSTGRESQL__USER: authentik
+      AUTHENTIK_POSTGRESQL__NAME: authentik
+      AUTHENTIK_POSTGRESQL__PASSWORD: Quoz62JGpWKNn24j3ZsA+AnOnvtS2cF+P7RGCrfgbBkrZi5W
+      AUTHENTIK_SECRET_KEY: ObKwB/s0/K9qmNpg0XuEX5TK4ckOn5i7t3brNYVinWl8g5KIoC4PffhmtXr4R/RGVUxaCmtzjXM/1IIQ
+      AUTHENTIK_REDIS__DB: 1
+      AUTHENTIK_BOOTSTRAP_PASSWORD: akadmin
+      AUTHENTIK_BOOTSTRAP_TOKEN: akadmin
+      AUTHENTIK_BOOTSTRAP_EMAIL: akadmin@smartland.lan
+    volumes:
+      - ./authentik/media:/media
+      - ./authentik/custom-templates:/templates
+    env_file:
+      - ./authentik/.env
+    ports:
+      - "${COMPOSE_PORT_HTTP:-9000}:9000"
+      - "${COMPOSE_PORT_HTTPS:-9443}:9443"
+    depends_on:
+      postgresql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      producer_net:
+        ipv4_address: 172.40.0.4
+    extra_hosts:
+      producer.smartland.lan: 172.40.0.6
+      auth.smartland.lan: 172.40.0.6
+  worker:
+    image: ${AUTHENTIK_IMAGE:-ghcr.io/goauthentik/server}:${AUTHENTIK_TAG:-2025.6.2}
+    restart: unless-stopped
+    command: worker
+    environment:
+      AUTHENTIK_REDIS__HOST: redis
+      AUTHENTIK_POSTGRESQL__HOST: postgresql
+      AUTHENTIK_POSTGRESQL__USER: authentik
+      AUTHENTIK_POSTGRESQL__NAME: authentik
+      AUTHENTIK_POSTGRESQL__PASSWORD: Quoz62JGpWKNn24j3ZsA+AnOnvtS2cF+P7RGCrfgbBkrZi5W
+      AUTHENTIK_SECRET_KEY: ObKwB/s0/K9qmNpg0XuEX5TK4ckOn5i7t3brNYVinWl8g5KIoC4PffhmtXr4R/RGVUxaCmtzjXM/1IIQ
+      AUTHENTIK_REDIS__DB: 1
+      AUTHENTIK_BOOTSTRAP_PASSWORD: akadmin
+      AUTHENTIK_BOOTSTRAP_TOKEN: akadmin
+      AUTHENTIK_BOOTSTRAP_EMAIL: akadmin@smartland.lan
+    # `user: root` and the docker socket volume are optional.
+    # See more for the docker socket integration here:
+    # https://goauthentik.io/docs/outposts/integrations/docker
+    # Removing `user: root` also prevents the worker from fixing the permissions
+    # on the mounted folders, so when removing this make sure the folders have the correct UID/GID
+    # (1000:1000 by default)
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ./authentik/media:/media
+      - ./authentik/certs:/certs
+      - ./authentik/custom-templates:/templates
+    env_file:
+      - ./authentik/.env
+    depends_on:
+      postgresql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      producer_net:
+        ipv4_address: 172.40.0.5
+
+  smartgateway-producer-traefik:
+    # The official v2 Traefik docker image
+    image: traefik:v2.10
+    restart: unless-stopped
+    # Enables the web UI and tells Traefik to listen to docker   
+    ports:
+      # The HTTP port
+      - "80:80"
+      # HTTPS
+      - "443:443"
+    volumes:
+      # So that Traefik can listen to the Docker events
+      - /var/run/docker.sock:/var/run/docker.sock
+      # load configuration file into Traefik
+      - ./producer-backend/traefik/traefik.yml:/etc/traefik/traefik.yml
+      # mount the folder with all dynamic configurations into Traefik
+      - ./producer-backend/traefik/traefik-dynamic:/etc/traefik/traefik-dynamic
+    networks:
+      producer_net:
+        ipv4_address: 172.40.0.6
+
+  smartgateway-producer-database:
+    image: docker.io/library/postgres:16-alpine
+    restart: unless-stopped
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -d $${POSTGRES_DB} -U $${POSTGRES_USER}" ]
+      start_period: 20s
+      interval: 30s
+      retries: 5
+      timeout: 5s
+    shm_size: 128mb
+    environment:
+      POSTGRES_PASSWORD: VJa6wbPN0QlENEbcwiR1WdFyGd4
+      POSTGRES_DB: smartgateway
+      POSTGRES_USER: smartgateway
+    ports:
+      - 5432:5432
+    volumes:
+      - ./producer-backend/data:/var/lib/postgresql/data
+    networks:
+      producer_net:
+        ipv4_address: 172.40.0.7
+
+  smartgateway-producer-backend:
+    image: producer-backend
+    build:
+      context: ./producer-backend/api
+      dockerfile: ./Dockerfile
+    restart: unless-stopped
+    command: [ "sh", "-c", "python -m uvicorn app.main:app --reload --host 0.0.0.0 --port 8000" ]
+    # ports:
+    #  - 8000:8000
+    volumes:
+      - ./producer-backend/api/:/srv/
+    env_file:
+      - ./producer-backend/.env
+    depends_on:
+      smartgateway-producer-database:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      producer_net:
+        ipv4_address: 172.40.0.8
+    extra_hosts:
+      producer.smartland.lan: 172.40.0.6
+      auth.smartland.lan: 172.40.0.6
+      consumer.tenant.lan: 172.30.0.6
+
+  smartgateway-producer-frontend:
+    image: producer-frontend
+    build:
+      context: ./producer-frontend
+      dockerfile: ./Dockerfile
+    restart: unless-stopped
+    # ports:
+    #   - 3000:3000
+    volumes:
+      - ./producer-frontend/:/srv/app/
+    networks:
+      producer_net:
+        ipv4_address: 172.40.0.9
+    extra_hosts:
+      producer.smartland.lan: 172.40.0.6
+      auth.smartland.lan: 172.40.0.6
+
+volumes:
+  database:
+    driver: local
+  redis:
+    driver: local

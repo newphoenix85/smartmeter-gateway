@@ -1,0 +1,51 @@
+http:
+  routers:
+    smartgateway-consumer:
+      entryPoints:
+        - "websecure"
+      rule: Host(`consumer.tenant.lan`)
+      service: "consumer"
+      priority: 1
+      tls: {}
+
+    smartgateway-fastapi-login:
+      entryPoints:
+        - "websecure"
+      rule: Host(`consumer.tenant.lan`) && PathPrefix(`/api/auth/login`) 
+      service: "fastapi"
+      priority: 3
+      middlewares:
+        - "auth"
+      tls: {}
+
+
+    smartgateway-fastapi:
+      entryPoints:
+        - "websecure"
+      rule: Host(`consumer.tenant.lan`) && PathPrefix(`/api`) 
+      service: "fastapi"
+      priority: 2
+      tls: {}
+    
+    smartgateway-database:
+      entryPoints:
+        - "websecure"
+      rule: Host(`db.tenant.lan`) 
+      service: "database"
+      tls: {}
+
+
+    traefik-dashboard:
+      entryPoints:
+        - "websecure"
+      service: dashboard@internal
+      rule: Host(`traefik.tenant.lan`)
+      tls: {}
+
+    traefik-api:
+      entryPoints:
+        - "websecure"
+      service: api@internal
+      rule: Host(`traefik.tenant.lan`) && PathPrefix(`/api`)
+      tls: {}
+

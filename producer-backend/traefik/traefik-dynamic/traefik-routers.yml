@@ -1,0 +1,53 @@
+http:
+  routers:
+
+    
+    smartgateway-producer:
+      entryPoints:
+        - "websecure"
+      rule: Host(`producer.smartland.lan`)
+      service: "producer"
+      priority: 1
+      tls: {}
+
+
+    smartgateway-fastapi:
+      entryPoints:
+        - "websecure"
+      rule: Host(`producer.smartland.lan`) && PathPrefix(`/api`) 
+      service: "fastapi"
+      priority: 2
+      tls: {}
+    
+    smartgateway-database:
+      entryPoints:
+        - "websecure"
+      rule: Host(`db.smartland.lan`) 
+      service: "database"
+      tls: {}
+
+
+    traefik-dashboard:
+      entryPoints:
+        - "websecure"
+      service: dashboard@internal
+      rule: Host(`traefik.smartland.lan`)
+      tls: {}
+
+    traefik-api:
+      entryPoints:
+        - "websecure"
+      service: api@internal
+      rule: Host(`traefik.smartland.lan`) && PathPrefix(`/api`)
+      tls: {}
+
+
+# forward direct requests for authentik to dashboard
+# forward all requests for app sepcific authetication to Authentik
+    authentik:
+      entryPoints:
+        - "websecure"
+      service: "authentik"
+      rule: Host(`auth.smartland.lan`) || HostRegexp(`{subdomain:[A-Za-z0-9](?:[A-Za-z0-9\-]{0,61}[A-Za-z0-9])?}.smartland.lan`) && PathPrefix(`/outpost.goauthentik.io/`)
+      tls: {}
+

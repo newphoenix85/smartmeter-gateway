@@ -1,0 +1,15 @@
+http:
+  services:
+    consumer:
+      loadBalancer:
+        servers:
+        - url: "http://smartgateway-consumer-frontend:3000"
+    fastapi:
+      loadBalancer:
+        servers:
+        - url: "http://smartgateway-consumer-backend:8000"
+    database:
+      loadBalancer:
+        servers:
+        - url: "http://smartgateway-consumer-database:5432"
+

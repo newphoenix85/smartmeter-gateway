@@ -1,0 +1,19 @@
+api:
+  dashboard: true
+
+entryPoints:
+  web:
+    address: ":8080"
+    
+  websecure:
+    address: ":8443"
+
+
+providers:
+  docker:
+  file:
+    directory: /etc/traefik/traefik-dynamic
+
+log:
+  level: DEBUG
+

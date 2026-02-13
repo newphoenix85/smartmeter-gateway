@@ -1,0 +1,9 @@
+http:
+  middlewares:
+    auth:
+      basicAuth:
+        users:
+          - "consumer-1:$2a$10$lTEfGWkUSkfqK5RkXs8BZ.UFrPieEUmrwOlfyIqDojA.cn.nl8lbu" # consumer-1:password123
+          - "consumer-2:$2a$10$lTEfGWkUSkfqK5RkXs8BZ.UFrPieEUmrwOlfyIqDojA.cn.nl8lbu" # consumer-2:password123
+
+        headerField: "X-WebAuth-Consumer"
